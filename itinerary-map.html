@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
   import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -25,7 +25,7 @@
   window.fbAuth = getAuth(fbApp);
   window.fbDb = getFirestore(fbApp);
   // Exposed on window so the app's classic (non-module) script below can use them.
-  window.fbFns = { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, doc, getDoc, setDoc, GoogleAuthProvider, signInWithPopup };
+  window.fbFns = { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, doc, getDoc, setDoc, GoogleAuthProvider, signInWithRedirect, getRedirectResult };
   window.__fbReady = true;
   window.dispatchEvent(new Event('firebase-ready'));
 </script>
@@ -874,16 +874,20 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 
 document.getElementById('authGoogleBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('authStatus');
-  statusEl.textContent = 'Åbner Google login…'; statusEl.className = 'status';
+  statusEl.textContent = 'Sender dig til Google…'; statusEl.className = 'status';
   try{
     const provider = new window.fbFns.GoogleAuthProvider();
-    await window.fbFns.signInWithPopup(window.fbAuth, provider);
+    await window.fbFns.signInWithRedirect(window.fbAuth, provider); // navigates away; picks back up via onAuthStateChanged when the browser returns
   }catch(e){
     statusEl.textContent = 'Google-login fejlede: ' + e.message; statusEl.className = 'status err';
   }
 });
 
 function startAuthListener(){
+  window.fbFns.getRedirectResult(window.fbAuth).catch((e) => {
+    const statusEl = document.getElementById('authStatus');
+    statusEl.textContent = 'Google-login fejlede: ' + e.message; statusEl.className = 'status err';
+  });
   window.fbFns.onAuthStateChanged(window.fbAuth, async (user) => {
   try{
     if(user){
