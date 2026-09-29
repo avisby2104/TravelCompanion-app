@@ -51,12 +51,17 @@
   .mapboxgl-popup-close-button{color:var(--muted);font-size:1.1rem;}
   .mapboxgl-popup-close-button:hover{color:var(--text);background:transparent;}
   h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.3rem;margin:0 0 4px;}
-  .app{display:flex;height:100%;}
+  .app{display:flex;height:100%;position:relative;}
   .sidebar{width:380px;min-width:320px;background:var(--panel);padding:20px;overflow-y:auto;border-right:1px solid var(--line);transition:width 0.2s ease, min-width 0.2s ease, padding 0.2s ease;}
   .sidebar.collapsed{width:0;min-width:0;padding:0;overflow:hidden;border-right:none;}
   #sidebarToggle{flex-shrink:0;width:20px;border:none;border-right:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;font-size:0.9rem;display:flex;align-items:center;justify-content:center;padding:0;}
   #sidebarToggle:hover{color:var(--text);background:var(--panel-2);}
-  #map{flex:1;}
+  #map{flex:1;min-width:0;}
+  @media (max-width: 768px){
+    .sidebar{position:fixed;top:0;bottom:0;left:0;width:100%;min-width:0;max-width:100%;z-index:50;padding-top:calc(20px + env(safe-area-inset-top,0px));}
+    .sidebar.collapsed{width:0;}
+    #sidebarToggle{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:14px;z-index:60;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);box-shadow:0 4px 12px rgba(0,0,0,0.4);}
+  }
   .subtitle{color:var(--muted);font-size:0.85rem;margin-bottom:18px;}
   .token-box{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:18px;}
   .token-box label{display:block;font-size:0.8rem;color:var(--muted);margin-bottom:6px;}
@@ -847,7 +852,9 @@ function setSidebarCollapsed(collapsed){
 sidebarToggleBtn.addEventListener('click', () => {
   setSidebarCollapsed(!sidebarEl.classList.contains('collapsed'));
 });
-if(localStorage.getItem('sidebarCollapsed') === '1'){
+const storedSidebarPref = localStorage.getItem('sidebarCollapsed');
+const startCollapsed = storedSidebarPref !== null ? storedSidebarPref === '1' : window.innerWidth <= 768;
+if(startCollapsed){
   sidebarEl.classList.add('collapsed');
   sidebarToggleBtn.textContent = '›';
   sidebarToggleBtn.title = 'Vis panel';
