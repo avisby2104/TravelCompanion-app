@@ -124,7 +124,11 @@
     <div class="subtitle">Tilføj etaper — se dem på kortet i datorækkefølge. Lander en nål forkert, kan du trække den til rette sted på kortet.</div>
 
 
-    <div class="token-box" id="tokenBox">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span id="tokenSummary" style="font-size:0.75rem;color:var(--muted);"></span>
+      <button id="tokenToggleBtn" type="button" style="width:auto;background:transparent;border:1px solid var(--line);color:var(--muted);font-size:0.72rem;padding:4px 10px;border-radius:6px;">Mapbox-token</button>
+    </div>
+    <div class="token-box" id="tokenBox" style="display:none;">
       <label for="tokenInput">Mapbox access token (starter med "pk.")</label>
       <input id="tokenInput" placeholder="pk.xxxxxxxxxxxx">
       <button id="saveToken">Gem token</button>
@@ -343,9 +347,19 @@ function saveStops(){
   }
 }
 
+function updateTokenSummary(){
+  const t = localStorage.getItem('mapboxToken');
+  const summary = document.getElementById('tokenSummary');
+  if(summary) summary.textContent = t ? 'Mapbox-token: sat ✓' : 'Mapbox-token: ikke sat';
+  return t;
+}
+
 function initMapbox(){
-  const token = localStorage.getItem('mapboxToken');
-  if(!token){ return; }
+  const token = updateTokenSummary();
+  if(!token){
+    document.getElementById('tokenBox').style.display = 'block'; // nothing to configure yet — show it right away
+    return;
+  }
   document.getElementById('tokenInput').value = token;
   document.getElementById('tokenStatus').textContent = 'Token gemt ✓';
   document.getElementById('tokenStatus').className = 'status ok';
@@ -363,6 +377,13 @@ function initMapbox(){
     renderMap();
   });
 }
+
+document.getElementById('tokenToggleBtn').addEventListener('click', () => {
+  const box = document.getElementById('tokenBox');
+  const show = box.style.display === 'none';
+  box.style.display = show ? 'block' : 'none';
+  document.getElementById('tokenToggleBtn').textContent = show ? 'Skjul token' : 'Mapbox-token';
+});
 
 document.getElementById('saveToken').addEventListener('click', () => {
   const val = document.getElementById('tokenInput').value.trim();
