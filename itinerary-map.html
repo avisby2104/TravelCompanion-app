@@ -816,6 +816,7 @@ function addPointMarker(lng, lat, popupHtml, color, opts){
   const size = opts.label ? 22 : 14;
   el.style.width = size+'px'; el.style.height = size+'px'; el.style.borderRadius='50%';
   el.style.background = color; el.style.border = '2px solid #1a1006';
+  el.style.boxShadow = '0 2px 5px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.15)';
   el.style.cursor = opts.draggable ? 'grab' : 'pointer';
   if(opts.label){
     el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center';
@@ -856,6 +857,34 @@ function addPointMarker(lng, lat, popupHtml, color, opts){
     if(!markerIndex[opts.stopId]) markerIndex[opts.stopId] = { markers: [] };
     markerIndex[opts.stopId].markers.push(marker);
   }
+}
+
+function arcCoords(a, b, segments, bend){
+  segments = segments || 24;
+  bend = bend === undefined ? 0.12 : bend;
+  const [x1,y1] = a, [x2,y2] = b;
+  const dx = x2-x1, dy = y2-y1;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if(dist === 0) return [a, b];
+  const px = -dy/dist, py = dx/dist; // perpendicular unit vector
+  const midX = (x1+x2)/2 + px*dist*bend;
+  const midY = (y1+y2)/2 + py*dist*bend;
+  const coords = [];
+  for(let i=0; i<=segments; i++){
+    const t = i/segments, mt = 1-t;
+    coords.push([mt*mt*x1 + 2*mt*t*midX + t*t*x2, mt*mt*y1 + 2*mt*t*midY + t*t*y2]);
+  }
+  return coords;
+}
+
+function buildArcedPath(points){
+  if(points.length < 2) return points;
+  let coords = [];
+  for(let i=0; i<points.length-1; i++){
+    const seg = arcCoords(points[i], points[i+1]);
+    coords = coords.concat(i === 0 ? seg : seg.slice(1)); // drop duplicate shared point at each join
+  }
+  return coords;
 }
 
 function addLineIcon(coordsPath, icon, bgColor){
@@ -903,7 +932,7 @@ function renderMap(){
       (s.vias||[]).forEach(v => { routeAnchors.push([v.lng, v.lat]); routeAnchorEnd.push(stopEnd); });
       routeAnchors.push([s.toLng, s.toLat]); // then continue from the arrival point
       routeAnchorEnd.push(stopEnd);
-      const legPath = [[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]];
+      const legPath = buildArcedPath([[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]]);
       addLineIcon(legPath, legIcon(s.type), color);
     }else{
       addPointMarker(s.lng, s.lat, buildPointPopup(s), 'var(--accent)', { draggable: true, stopId: s.id, label: seq });
@@ -931,7 +960,7 @@ function renderMap(){
       routeFeatures.push({
         type:'Feature',
         properties:{ isPast: routeAnchorEnd[i+1] < todayStr },
-        geometry:{ type:'LineString', coordinates:[routeAnchors[i], routeAnchors[i+1]] }
+        geometry:{ type:'LineString', coordinates: arcCoords(routeAnchors[i], routeAnchors[i+1]) }
       });
     }
     map.addSource('route', {
@@ -957,7 +986,7 @@ function renderMap(){
         features: legStops.map(s => ({
           type: 'Feature',
           properties: { name: s.name, type: s.type, isPast: (s.end || s.start) < todayStr },
-          geometry: { type: 'LineString', coordinates: [[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]] }
+          geometry: { type: 'LineString', coordinates: buildArcedPath([[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]]) }
         }))
       }
     });
