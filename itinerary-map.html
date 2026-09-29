@@ -74,7 +74,8 @@
   .form-row > *{flex:1;}
   fieldset{border:none;padding:0;margin:0 0 18px;}
   legend{font-size:0.8rem;color:var(--muted);margin-bottom:8px;text-transform:none;}
-  .stop{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;}
+  .stop{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;transition:border-color 0.15s ease;}
+  .stop:hover{border-color:var(--accent);}
   .stop .type{display:inline-block;font-size:0.7rem;color:var(--accent);margin-bottom:4px;}
   .stop .name{font-weight:600;font-size:0.95rem;}
   .seq-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#1a1006;font-size:0.7rem;font-weight:700;margin-right:8px;vertical-align:middle;}
@@ -89,6 +90,9 @@
   .suggest-item{padding:8px 10px;font-size:0.82rem;cursor:pointer;border-bottom:1px solid var(--line);}
   .suggest-item:last-child{border-bottom:none;}
   .suggest-item:hover{background:var(--bg);}
+  .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(26,16,6,0.3);border-top-color:#1a1006;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:-2px;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  button:disabled{opacity:0.7;cursor:not-allowed;}
   .status{font-size:0.8rem;margin-top:6px;min-height:1em;}
   .status.err{color:#e8746a;}
   .status.ok{color:var(--route);}
@@ -122,6 +126,7 @@
     </div>
     <div style="color:var(--muted);font-size:0.72rem;margin-bottom:10px;" id="userEmailLabel"></div>
     <div class="subtitle">Tilføj etaper — se dem på kortet i datorækkefølge. Lander en nål forkert, kan du trække den til rette sted på kortet.</div>
+    <div id="tripSummary" style="color:var(--accent);font-size:0.82rem;font-weight:600;margin:-6px 0 14px;"></div>
 
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -176,7 +181,7 @@
 </div>
 
 <script>
-let map, stops = [], markers = [], mapLoaded = false, viaCount = 0, editingId = null, hasFitBounds = false;
+let map, stops = [], markers = [], mapLoaded = false, viaCount = 0, editingId = null, hasFitBounds = false, markerIndex = {};
 
 function isLegType(type){ return type === 'fly' || type === 'transport' || type === 'train'; }
 
@@ -498,6 +503,10 @@ document.getElementById('addStop').addEventListener('click', async () => {
 
   statusEl.textContent = 'Slår adresse(r) op...';
   statusEl.className = 'status';
+  const addBtn = document.getElementById('addStop');
+  const busyLabel = editingId ? 'Gem ændring' : 'Tilføj til rejsen';
+  addBtn.disabled = true;
+  addBtn.innerHTML = '<span class="spinner"></span>Arbejder…';
   try{
     let stop = { id: Date.now(), name, type, start, end: end||start };
     if(leg){
@@ -600,7 +609,9 @@ document.getElementById('addStop').addEventListener('click', async () => {
   }catch(e){
     statusEl.textContent = 'Kunne ikke finde adressen(erne) — prøv en mere specifik søgning eller andet link.';
     statusEl.className = 'status err';
+    addBtn.textContent = busyLabel;
   }
+  addBtn.disabled = false;
 });
 
 function removeStop(id){
@@ -659,13 +670,14 @@ document.getElementById('cancelEdit').addEventListener('click', cancelEditMode);
 
 function renderList(){
   const list = document.getElementById('stopList');
+  updateTripSummary();
   if(!stops.length){
     list.innerHTML = '<div class="empty">Ingen etaper endnu. Tilføj din første ovenfor.</div>';
     return;
   }
   const sorted = [...stops].sort((a,b) => a.start.localeCompare(b.start) || (a.end||a.start).localeCompare(b.end||b.start));
   list.innerHTML = sorted.map((s, i) => `
-    <div class="stop">
+    <div class="stop" data-id="${s.id}" style="cursor:pointer;">
       <button class="edit" data-id="${s.id}" title="Rediger">✎</button>
       <button class="del" data-id="${s.id}" title="Fjern">✕</button>
       <div class="type">${typeLabel(s.type)}</div>
@@ -674,11 +686,40 @@ function renderList(){
       <div class="dates">${s.start}${s.end && s.end!==s.start ? ' → '+s.end : ''}</div>
     </div>`).join('');
   list.querySelectorAll('.edit').forEach(btn => {
-    btn.addEventListener('click', () => editStop(Number(btn.dataset.id)));
+    btn.addEventListener('click', (e) => { e.stopPropagation(); editStop(Number(btn.dataset.id)); });
   });
   list.querySelectorAll('.del').forEach(btn => {
-    btn.addEventListener('click', () => removeStop(Number(btn.dataset.id)));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = Number(btn.dataset.id);
+      const s = stops.find(x => x.id === id);
+      if(confirm(`Er du sikker på, at du vil slette "${s ? s.name : 'denne etape'}"?`)) removeStop(id);
+    });
   });
+  list.querySelectorAll('.stop').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if(e.target.closest('button')) return;
+      flyToStop(Number(el.dataset.id));
+    });
+  });
+}
+
+function flyToStop(id){
+  if(!map || !mapLoaded) return;
+  const entry = markerIndex[id];
+  if(!entry || !entry.markers.length) return;
+  const coordsList = entry.markers.map(m => m.getLngLat());
+  if(coordsList.length === 1){
+    map.flyTo({ center: coordsList[0], zoom: Math.max(map.getZoom(), 13) });
+  }else{
+    const b = new mapboxgl.LngLatBounds();
+    coordsList.forEach(c => b.extend(c));
+    map.fitBounds(b, { padding: 80, maxZoom: 13 });
+  }
+  entry.markers[0].togglePopup();
+  if(window.innerWidth <= 768 && sidebarEl && !sidebarEl.classList.contains('collapsed')){
+    setSidebarCollapsed(true);
+  }
 }
 
 function nightsBetween(startStr, endStr){
@@ -686,6 +727,27 @@ function nightsBetween(startStr, endStr){
   const end = new Date(endStr || startStr);
   const diffDays = Math.round((end - start) / 86400000);
   return diffDays + 1; // both the start and end date counted inclusive
+}
+
+const DA_MONTHS = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+function formatDaDate(dateStr){
+  const d = new Date(dateStr);
+  return `${d.getDate()}. ${DA_MONTHS[d.getMonth()]}`;
+}
+
+function updateTripSummary(){
+  const el = document.getElementById('tripSummary');
+  if(!el) return;
+  if(!stops.length){ el.textContent = ''; return; }
+  const minStart = stops.map(s => s.start).reduce((a,b) => a < b ? a : b);
+  const maxEnd = stops.map(s => s.end || s.start).reduce((a,b) => a > b ? a : b);
+  const nights = nightsBetween(minStart, maxEnd);
+  const startD = new Date(minStart), endD = new Date(maxEnd);
+  const sameMonth = startD.getMonth() === endD.getMonth() && startD.getFullYear() === endD.getFullYear();
+  const dateRange = sameMonth
+    ? `${startD.getDate()}.–${formatDaDate(maxEnd)}`
+    : `${formatDaDate(minStart)} – ${formatDaDate(maxEnd)}`;
+  el.textContent = `${stops.length} etape${stops.length===1?'':'r'} · ${dateRange} · ${nights} overnatning${nights===1?'':'er'}`;
 }
 
 function buildPointPopup(s){
@@ -756,6 +818,10 @@ function addPointMarker(lng, lat, popupHtml, color, opts){
     });
   }
   markers.push(marker);
+  if(opts.stopId != null){
+    if(!markerIndex[opts.stopId]) markerIndex[opts.stopId] = { markers: [] };
+    markerIndex[opts.stopId].markers.push(marker);
+  }
 }
 
 function addLineIcon(coordsPath, icon, bgColor){
@@ -778,6 +844,7 @@ function renderMap(){
   if(!map) return;
   markers.forEach(m => m.remove());
   markers = [];
+  markerIndex = {};
   const sorted = [...stops].sort((a,b) => a.start.localeCompare(b.start) || (a.end||a.start).localeCompare(b.end||b.start));
   const bounds = new mapboxgl.LngLatBounds();
   const routeAnchors = []; // one representative point per stop, in order, for the overview line
