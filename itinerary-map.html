@@ -46,7 +46,11 @@
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;height:100vh;overflow:hidden;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box;}
-  .mapboxgl-popup-content{background:var(--panel-2) !important;color:var(--text) !important;border-radius:8px;padding:12px 14px !important;font-family:'Inter',sans-serif;font-size:0.85rem;line-height:1.4;box-shadow:0 6px 20px rgba(0,0,0,0.45);}
+  .mapboxgl-popup-content{background:var(--panel-2) !important;color:var(--text) !important;border-radius:8px;padding:12px 14px !important;font-family:'Inter',sans-serif;font-size:0.85rem;line-height:1.4;box-shadow:0 6px 20px rgba(0,0,0,0.45);border-top:4px solid var(--line);}
+  .mapboxgl-popup.popup-accent .mapboxgl-popup-content{border-top-color:var(--accent);}
+  .mapboxgl-popup.popup-fly .mapboxgl-popup-content{border-top-color:var(--fly);}
+  .mapboxgl-popup.popup-train .mapboxgl-popup-content{border-top-color:var(--train);}
+  .mapboxgl-popup.popup-boat .mapboxgl-popup-content{border-top-color:var(--boat);}
   .mapboxgl-popup-tip{border-top-color:var(--panel-2) !important;border-bottom-color:var(--panel-2) !important;}
   .mapboxgl-popup-close-button{color:var(--muted);font-size:1.1rem;}
   .mapboxgl-popup-close-button:hover{color:var(--text);background:transparent;}
@@ -637,6 +641,7 @@ function removeStop(id){
 function editStop(id){
   const s = stops.find(x => x.id === id);
   if(!s) return;
+  if(sidebarEl && sidebarEl.classList.contains('collapsed')) setSidebarCollapsed(false);
   editingId = id;
   document.getElementById('stopName').value = s.name;
   document.getElementById('stopType').value = s.type;
@@ -773,6 +778,10 @@ function updateTripSummary(){
   el.textContent = `${stops.length} etape${stops.length===1?'':'r'} · ${dateRange} · ${nights} overnatning${nights===1?'':'er'}`;
 }
 
+function editButtonHtml(id){
+  return `<div style="margin-top:8px;"><button onclick="editStop(${id})" style="width:auto;background:transparent;border:1px solid var(--line);color:var(--text);padding:4px 10px;border-radius:6px;font-size:0.78rem;cursor:pointer;">✎ Rediger</button></div>`;
+}
+
 function buildPointPopup(s){
   let html = '';
   if(s.imageUrl){
@@ -787,6 +796,7 @@ function buildPointPopup(s){
     const linkLabel = /booking\.com/i.test(s.bookingUrl) ? 'Se på Booking.com →' : 'Besøg hjemmesiden →';
     html += `<br><a href="${s.bookingUrl}" target="_blank" rel="noopener" style="color:var(--popup-link);">${linkLabel}</a>`;
   }
+  html += editButtonHtml(s.id);
   return html;
 }
 
@@ -812,9 +822,10 @@ function addPointMarker(lng, lat, popupHtml, color, opts){
     el.style.color='#1a1006'; el.style.fontSize='11px'; el.style.fontWeight='700'; el.style.fontFamily="'Inter',sans-serif";
     el.textContent = opts.label;
   }
+  const colorClassMap = { 'var(--accent)':'popup-accent', 'var(--fly)':'popup-fly', 'var(--train)':'popup-train', 'var(--boat)':'popup-boat' };
   const marker = new mapboxgl.Marker({ element: el, draggable: !!opts.draggable })
     .setLngLat([lng, lat])
-    .setPopup(new mapboxgl.Popup({offset:12, maxWidth:'260px'}).setHTML(popupHtml))
+    .setPopup(new mapboxgl.Popup({offset:12, maxWidth:'260px', className: colorClassMap[color] || ''}).setHTML(popupHtml))
     .addTo(map);
   if(opts.draggable && opts.stopId){
     marker.on('dragend', async () => {
@@ -871,27 +882,33 @@ function renderMap(){
   const sorted = [...stops].sort((a,b) => a.start.localeCompare(b.start) || (a.end||a.start).localeCompare(b.end||b.start));
   const bounds = new mapboxgl.LngLatBounds();
   const routeAnchors = []; // one representative point per stop, in order, for the overview line
+  const routeAnchorEnd = []; // parallel array: end date of the stop owning that anchor point
+  const todayStr = new Date().toISOString().slice(0,10);
 
   sorted.forEach((s, i) => {
     const seq = String(i+1);
+    const stopEnd = s.end || s.start;
     if(isLegType(s.type)){
       const color = legColor(s.type);
-      addPointMarker(s.fromLng, s.fromLat, `<strong>${s.name}</strong><br>Afgang: ${s.fromAddress}`, color, { label: seq, draggable: true, stopId: s.id, field: 'from' });
+      addPointMarker(s.fromLng, s.fromLat, `<strong>${s.name}</strong><br>Afgang: ${s.fromAddress}${editButtonHtml(s.id)}`, color, { label: seq, draggable: true, stopId: s.id, field: 'from' });
       (s.vias||[]).forEach((v, vi) => {
-        addPointMarker(v.lng, v.lat, `<strong>${s.name}</strong><br>Mellemlanding: ${v.address}`, color, { draggable: true, stopId: s.id, field: 'via', viaIndex: vi });
+        addPointMarker(v.lng, v.lat, `<strong>${s.name}</strong><br>Mellemlanding: ${v.address}${editButtonHtml(s.id)}`, color, { draggable: true, stopId: s.id, field: 'via', viaIndex: vi });
         bounds.extend([v.lng, v.lat]);
       });
-      addPointMarker(s.toLng, s.toLat, `<strong>${s.name}</strong><br>Ankomst: ${s.toAddress}`, color, { label: seq, draggable: true, stopId: s.id, field: 'to' });
+      addPointMarker(s.toLng, s.toLat, `<strong>${s.name}</strong><br>Ankomst: ${s.toAddress}${editButtonHtml(s.id)}`, color, { label: seq, draggable: true, stopId: s.id, field: 'to' });
       bounds.extend([s.fromLng, s.fromLat]);
       bounds.extend([s.toLng, s.toLat]);
       routeAnchors.push([s.fromLng, s.fromLat]); // arrive at departure point first
-      (s.vias||[]).forEach(v => routeAnchors.push([v.lng, v.lat]));
+      routeAnchorEnd.push(stopEnd);
+      (s.vias||[]).forEach(v => { routeAnchors.push([v.lng, v.lat]); routeAnchorEnd.push(stopEnd); });
       routeAnchors.push([s.toLng, s.toLat]); // then continue from the arrival point
+      routeAnchorEnd.push(stopEnd);
       const legPath = [[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]];
       addLineIcon(legPath, legIcon(s.type), color);
     }else{
       addPointMarker(s.lng, s.lat, buildPointPopup(s), 'var(--accent)', { draggable: true, stopId: s.id, label: seq });
       bounds.extend([s.lng, s.lat]);
+      routeAnchorEnd.push(stopEnd);
       routeAnchors.push([s.lng, s.lat]);
     }
   });
@@ -909,14 +926,25 @@ function renderMap(){
   });
 
   if(routeAnchors.length > 1){
+    const routeFeatures = [];
+    for(let i=0; i<routeAnchors.length-1; i++){
+      routeFeatures.push({
+        type:'Feature',
+        properties:{ isPast: routeAnchorEnd[i+1] < todayStr },
+        geometry:{ type:'LineString', coordinates:[routeAnchors[i], routeAnchors[i+1]] }
+      });
+    }
     map.addSource('route', {
       type: 'geojson',
-      data: { type:'Feature', geometry: { type:'LineString', coordinates: routeAnchors } }
+      data: { type:'FeatureCollection', features: routeFeatures }
     });
     map.addLayer({
       id:'route', type:'line', source:'route',
       layout:{ 'line-join':'round', 'line-cap':'round' },
-      paint:{ 'line-color':'#4FB0A5', 'line-width':2, 'line-dasharray':[2,1] }
+      paint:{
+        'line-color':'#4FB0A5', 'line-width':2, 'line-dasharray':[2,1],
+        'line-opacity': ['case', ['get','isPast'], 0.28, 0.9]
+      }
     });
   }
 
@@ -928,7 +956,7 @@ function renderMap(){
         type: 'FeatureCollection',
         features: legStops.map(s => ({
           type: 'Feature',
-          properties: { name: s.name, type: s.type },
+          properties: { name: s.name, type: s.type, isPast: (s.end || s.start) < todayStr },
           geometry: { type: 'LineString', coordinates: [[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]] }
         }))
       }
@@ -938,7 +966,8 @@ function renderMap(){
       layout:{ 'line-join':'round', 'line-cap':'round' },
       paint:{
         'line-color': ['match', ['get','type'], 'fly', '#8ECFEB', 'train', '#9099A6', 'transport', '#1B4B72', '#6FA8DC'],
-        'line-width':3
+        'line-width':3,
+        'line-opacity': ['case', ['get','isPast'], 0.3, 1]
       }
     });
   }
