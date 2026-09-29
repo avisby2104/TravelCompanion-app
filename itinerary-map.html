@@ -305,10 +305,21 @@ async function saveStopsToCloud(){
     await setDoc(doc(window.fbDb, 'users', currentUid), { stops }, { merge: true });
   }catch(e){ console.error('Cloud save failed', e); }
 }
-async function loadStopsFromCloud(uid){
+async function saveTokenToCloud(token){
+  if(!currentUid) return;
+  try{
+    const { doc, setDoc } = window.fbFns;
+    await setDoc(doc(window.fbDb, 'users', currentUid), { mapboxToken: token }, { merge: true });
+  }catch(e){ console.error('Cloud token save failed', e); }
+}
+async function loadUserDataFromCloud(uid){
   const { doc, getDoc } = window.fbFns;
   const snap = await getDoc(doc(window.fbDb, 'users', uid));
-  return (snap.exists() && Array.isArray(snap.data().stops)) ? snap.data().stops : [];
+  const data = snap.exists() ? snap.data() : {};
+  return {
+    stops: Array.isArray(data.stops) ? data.stops : [],
+    mapboxToken: typeof data.mapboxToken === 'string' ? data.mapboxToken : null
+  };
 }
 function saveStops(){
   if(currentUid){
@@ -348,6 +359,7 @@ document.getElementById('saveToken').addEventListener('click', () => {
     return;
   }
   localStorage.setItem('mapboxToken', val);
+  if(currentUid) saveTokenToCloud(val);
   location.reload();
 });
 
@@ -895,15 +907,22 @@ function startAuthListener(){
       document.getElementById('userEmailLabel').textContent = user.email || '';
       showAuthScreen(false);
 
-      const cloudStops = await loadStopsFromCloud(user.uid);
+      const cloudData = await loadUserDataFromCloud(user.uid);
       const localStops = loadStops();
+      const localToken = localStorage.getItem('mapboxToken');
 
-      if(cloudStops.length === 0 && localStops.length > 0){
+      if(cloudData.mapboxToken){
+        localStorage.setItem('mapboxToken', cloudData.mapboxToken); // cloud is the source of truth once logged in
+      }else if(localToken){
+        await saveTokenToCloud(localToken); // first device to log in — seed the cloud copy
+      }
+
+      if(cloudData.stops.length === 0 && localStops.length > 0){
         const migrate = confirm(`Vi fandt ${localStops.length} etape(r) gemt på denne enhed. Vil du overføre dem til din konto (${user.email})?`);
         stops = migrate ? localStops : [];
         if(migrate) await saveStopsToCloud();
       }else{
-        stops = cloudStops;
+        stops = cloudData.stops;
       }
 
       if(!map){
