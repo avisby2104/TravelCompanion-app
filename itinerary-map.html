@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rejseoverblik</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAbeCnb8FTebKS67X_AVwbYtfsOnFxNP0U",
+    authDomain: "travel-companion-app-a1555.firebaseapp.com",
+    projectId: "travel-companion-app-a1555",
+    storageBucket: "travel-companion-app-a1555.firebasestorage.app",
+    messagingSenderId: "691047178061",
+    appId: "1:691047178061:web:3ac31aea00a1de8c02e104"
+  };
+
+  const fbApp = initializeApp(firebaseConfig);
+  window.fbAuth = getAuth(fbApp);
+  window.fbDb = getFirestore(fbApp);
+  // Exposed on window so the app's classic (non-module) script below can use them.
+  window.fbFns = { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, doc, getDoc, setDoc };
+</script>
+<style>
+  :root{
+    --bg:#0F1B2B; --panel:#16273D; --panel-2:#1C3049; --line:#28405C;
+    --text:#E8EDF2; --muted:#8CA0B3; --accent:#E8934A; --route:#4FB0A5; --leg:#6FA8DC; --popup-link:#9FD8FF;
+    --fly:#8ECFEB; --boat:#1B4B72; --train:#9099A6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;height:100vh;overflow:hidden;}
+  .mapboxgl-popup-content{background:var(--panel-2) !important;color:var(--text) !important;border-radius:8px;padding:12px 14px !important;font-family:'Inter',sans-serif;font-size:0.85rem;line-height:1.4;box-shadow:0 6px 20px rgba(0,0,0,0.45);}
+  .mapboxgl-popup-tip{border-top-color:var(--panel-2) !important;border-bottom-color:var(--panel-2) !important;}
+  .mapboxgl-popup-close-button{color:var(--muted);font-size:1.1rem;}
+  .mapboxgl-popup-close-button:hover{color:var(--text);background:transparent;}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.3rem;margin:0 0 4px;}
+  .app{display:flex;height:100vh;}
+  .sidebar{width:380px;min-width:320px;background:var(--panel);padding:20px;overflow-y:auto;border-right:1px solid var(--line);transition:width 0.2s ease, min-width 0.2s ease, padding 0.2s ease;}
+  .sidebar.collapsed{width:0;min-width:0;padding:0;overflow:hidden;border-right:none;}
+  #sidebarToggle{flex-shrink:0;width:20px;border:none;border-right:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;font-size:0.9rem;display:flex;align-items:center;justify-content:center;padding:0;}
+  #sidebarToggle:hover{color:var(--text);background:var(--panel-2);}
+  #map{flex:1;}
+  .subtitle{color:var(--muted);font-size:0.85rem;margin-bottom:18px;}
+  .token-box{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:18px;}
+  .token-box label{display:block;font-size:0.8rem;color:var(--muted);margin-bottom:6px;}
+  input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:0.9rem;margin-bottom:10px;}
+  input:focus,select:focus{outline:1px solid var(--accent);border-color:var(--accent);}
+  button{background:var(--accent);color:#1a1006;border:none;padding:9px 14px;border-radius:6px;font-family:inherit;font-weight:600;font-size:0.9rem;cursor:pointer;width:100%;}
+  button:hover{filter:brightness(1.08);}
+  button:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+  .form-row{display:flex;gap:8px;}
+  .form-row > *{flex:1;}
+  fieldset{border:none;padding:0;margin:0 0 18px;}
+  legend{font-size:0.8rem;color:var(--muted);margin-bottom:8px;text-transform:none;}
+  .stop{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;}
+  .stop .type{display:inline-block;font-size:0.7rem;color:var(--accent);margin-bottom:4px;}
+  .stop .name{font-weight:600;font-size:0.95rem;}
+  .seq-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#1a1006;font-size:0.7rem;font-weight:700;margin-right:8px;vertical-align:middle;}
+  .stop .dates{color:var(--muted);font-size:0.8rem;margin-top:2px;}
+  .stop .del{position:absolute;top:10px;right:10px;width:auto;background:transparent;color:var(--muted);padding:2px 6px;font-size:1rem;}
+  .stop .del:hover{color:var(--accent);}
+  .stop .edit{position:absolute;top:10px;right:34px;width:auto;background:transparent;color:var(--muted);padding:2px 6px;font-size:1rem;}
+  .stop .edit:hover{color:var(--accent);}
+  .empty{color:var(--muted);font-size:0.85rem;text-align:center;padding:30px 10px;border:1px dashed var(--line);border-radius:8px;}
+  .suggest-wrap{position:relative;}
+  .suggest-list{position:absolute;top:100%;left:0;right:0;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;max-height:170px;overflow-y:auto;z-index:20;margin-top:-6px;box-shadow:0 6px 16px rgba(0,0,0,0.4);}
+  .suggest-item{padding:8px 10px;font-size:0.82rem;cursor:pointer;border-bottom:1px solid var(--line);}
+  .suggest-item:last-child{border-bottom:none;}
+  .suggest-item:hover{background:var(--bg);}
+  .status{font-size:0.8rem;margin-top:6px;min-height:1em;}
+  .status.err{color:#e8746a;}
+  .status.ok{color:var(--route);}
+  #stopList{margin-top:16px;}
+</style>
+</head>
+<body>
+<div id="authScreen" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:100;font-family:'Inter',sans-serif;">
+  <div style="background:var(--panel);padding:28px;border-radius:10px;width:320px;border:1px solid var(--line);">
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.3rem;margin:0 0 4px;color:var(--text);">Rejseoverblik</h1>
+    <div style="color:var(--muted);font-size:0.85rem;margin-bottom:18px;">Log ind for at se din rejseplan — dine etaper følger med, uanset hvilken enhed du bruger.</div>
+    <input id="authEmail" type="email" placeholder="E-mail" style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:0.9rem;margin-bottom:10px;box-sizing:border-box;">
+    <input id="authPassword" type="password" placeholder="Adgangskode (mindst 6 tegn)" style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:0.9rem;margin-bottom:10px;box-sizing:border-box;">
+    <button id="authLoginBtn" style="width:100%;background:var(--accent);color:#1a1006;border:none;padding:9px 14px;border-radius:6px;font-weight:600;cursor:pointer;margin-bottom:8px;">Log ind</button>
+    <button id="authSignupBtn" style="width:100%;background:transparent;border:1px solid var(--line);color:var(--text);padding:9px 14px;border-radius:6px;cursor:pointer;">Opret ny bruger</button>
+    <div class="status" id="authStatus" style="margin-top:8px;"></div>
+  </div>
+</div>
+<div class="app" id="appRoot" style="display:none;">
+  <div class="sidebar">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+      <h1>Rejseoverblik</h1>
+      <button id="logoutBtn" title="Log ud" style="width:auto;background:transparent;border:none;color:var(--muted);font-size:0.75rem;text-decoration:underline;cursor:pointer;padding:0;">Log ud</button>
+    </div>
+    <div style="color:var(--muted);font-size:0.72rem;margin-bottom:10px;" id="userEmailLabel"></div>
+    <div class="subtitle">Tilføj etaper — se dem på kortet i datorækkefølge. Lander en nål forkert, kan du trække den til rette sted på kortet.</div>
+
+
+    <div class="token-box" id="tokenBox">
+      <label for="tokenInput">Mapbox access token (starter med "pk.")</label>
+      <input id="tokenInput" placeholder="pk.xxxxxxxxxxxx">
+      <button id="saveToken">Gem token</button>
+      <div class="status" id="tokenStatus"></div>
+    </div>
+
+    <fieldset>
+      <legend>Tilføj etape</legend>
+      <input id="stopName" placeholder="Navn (fx Hotel Roma, Colosseum)">
+      <select id="stopType">
+        <option value="hotel">Hotel</option>
+        <option value="fly">Fly</option>
+        <option value="transport">Båd</option>
+        <option value="train">Tog</option>
+        <option value="aktivitet">Aktivitet</option>
+      </select>
+      <div id="singleAddressField">
+        <input id="stopAddress" placeholder="Adresse eller sted (fx Rom, Italien)">
+        <div id="bookingSection" style="display:none;">
+          <input id="bookingUrl" placeholder="Link til Booking.com eller hotellets hjemmeside (valgfrit)">
+          <input id="imageUrlInput" placeholder="Billede-link (valgfrit) – indsæt selv, hvis automatisk hentning fejler">
+        </div>
+      </div>
+      <div id="legAddressFields" style="display:none;">
+        <input id="stopFrom" placeholder="Fra (fx Denpasar) – vælg fra listen, eller indsæt koordinater/link">
+        <div id="viaSection" style="display:none;">
+          <div id="viaContainer"></div>
+          <button type="button" id="addViaBtn" style="background:transparent;border:1px dashed var(--line);color:var(--muted);margin-bottom:10px;">+ Tilføj mellemlanding</button>
+        </div>
+        <input id="stopTo" placeholder="Til (fx Rom Fiumicino) – vælg fra listen, eller indsæt koordinater/link">
+      </div>
+      <div class="form-row">
+        <input id="stopStart" type="date">
+        <input id="stopEnd" type="date">
+      </div>
+      <button id="addStop">Tilføj til rejsen</button>
+      <button id="cancelEdit" type="button" style="display:none;background:transparent;border:1px solid var(--line);color:var(--muted);margin-top:8px;">Annuller redigering</button>
+      <div class="status" id="addStatus"></div>
+    </fieldset>
+
+    <div id="stopList"></div>
+  </div>
+  <button id="sidebarToggle" title="Minimer/vis panel">‹</button>
+  <div id="map"></div>
+</div>
+
+<script>
+let map, stops = [], markers = [], mapLoaded = false, viaCount = 0, editingId = null, hasFitBounds = false;
+
+function isLegType(type){ return type === 'fly' || type === 'transport' || type === 'train'; }
+
+function typeLabel(type){
+  return { hotel:'Hotel', fly:'Fly', transport:'Båd', train:'Tog', aktivitet:'Aktivitet' }[type] || type;
+}
+
+function legColor(type){
+  if(type === 'fly') return 'var(--fly)';
+  if(type === 'train') return 'var(--train)';
+  return 'var(--boat)'; // transport (Båd)
+}
+
+function legIcon(type){
+  if(type === 'fly') return '✈️';
+  if(type === 'train') return '🚆';
+  return '🚢'; // transport (Båd)
+}
+
+function toggleAddressFields(){
+  const type = document.getElementById('stopType').value;
+  document.getElementById('singleAddressField').style.display = isLegType(type) ? 'none' : 'block';
+  document.getElementById('legAddressFields').style.display = isLegType(type) ? 'block' : 'none';
+  document.getElementById('viaSection').style.display = type === 'fly' ? 'block' : 'none';
+  document.getElementById('bookingSection').style.display = type === 'hotel' ? 'block' : 'none';
+  document.getElementById('stopAddress').placeholder = type === 'hotel'
+    ? 'Adresse, koordinater eller Google Maps-link (valgfrit)'
+    : 'Adresse, koordinater eller Google Maps-link';
+}
+document.getElementById('stopType').addEventListener('change', toggleAddressFields);
+
+document.getElementById('stopStart').addEventListener('change', () => {
+  const startVal = document.getElementById('stopStart').value;
+  const endInput = document.getElementById('stopEnd');
+  if(startVal){
+    endInput.min = startVal;
+    if(!endInput.value) endInput.value = startVal;
+  }
+});
+
+function attachPlaceAutocomplete(inputEl){
+  const wrapper = document.createElement('div');
+  wrapper.className = 'suggest-wrap';
+  inputEl.parentNode.insertBefore(wrapper, inputEl);
+  wrapper.appendChild(inputEl);
+  const list = document.createElement('div');
+  list.className = 'suggest-list';
+  list.style.display = 'none';
+  wrapper.appendChild(list);
+  const statusLine = document.createElement('div');
+  statusLine.style.cssText = 'font-size:0.72rem;color:var(--muted);margin:-6px 0 8px;min-height:1em;';
+  wrapper.parentNode.insertBefore(statusLine, wrapper.nextSibling);
+
+  let debounceTimer;
+  function hideList(){ list.style.display = 'none'; list.innerHTML = ''; }
+
+  inputEl.addEventListener('input', () => {
+    inputEl._geo = null; // typing invalidates any previously clicked suggestion
+    clearTimeout(debounceTimer);
+    const q = inputEl.value.trim();
+    if(q.length < 3){ hideList(); statusLine.textContent = ''; return; }
+    statusLine.textContent = 'Søger…';
+    debounceTimer = setTimeout(async () => {
+      const token = localStorage.getItem('mapboxToken');
+      if(!token){ statusLine.textContent = 'Ingen Mapbox-token fundet.'; return; }
+      try{
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${token}&limit=5&types=poi,place`;
+        const res = await fetch(url);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const feats = data.features || [];
+        if(!feats.length){ hideList(); statusLine.textContent = 'Ingen resultater for "' + q + '".'; return; }
+        statusLine.textContent = '';
+        list.innerHTML = feats.map((f, i) => `<div class="suggest-item" data-i="${i}">${f.place_name}</div>`).join('');
+        list.style.display = 'block';
+        list.querySelectorAll('.suggest-item').forEach(item => {
+          item.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // keep focus/blur from closing the list before the click registers
+            const f = feats[Number(item.dataset.i)];
+            inputEl.value = f.place_name;
+            inputEl._geo = { lng: f.center[0], lat: f.center[1], placeName: f.place_name };
+            hideList();
+          });
+        });
+      }catch(e){
+        hideList();
+        statusLine.textContent = 'Fejl ved søgning: ' + e.message;
+      }
+    }, 350);
+  });
+  inputEl.addEventListener('blur', () => { setTimeout(hideList, 150); });
+}
+
+async function resolveLocationInput(inputEl, token, country){
+  const raw = inputEl.value.trim();
+  if(inputEl._geo && inputEl._geo.placeName === raw){
+    return { address: raw, res: inputEl._geo }; // person picked this from the dropdown — trust it directly
+  }
+  const cleaned = sanitizeAddressQuery(raw);
+  const coords = parseCoordsFromInput(cleaned);
+  if(coords){
+    const rev = await reverseGeocode(coords.lng, coords.lat, token);
+    return { address: rev || cleaned, res: { lng: coords.lng, lat: coords.lat, placeName: rev || cleaned } };
+  }
+  const res = await geocode(cleaned, token, country);
+  return { address: cleaned, res };
+}
+
+function parseBookingUrl(url){
+  try{
+    const u = new URL(url);
+    if(!/booking\.com$/.test(u.hostname.replace(/^www\./,''))) return null;
+    const parts = u.pathname.split('/').filter(Boolean); // e.g. ['hotel','it','hotel-danieli.en-gb.html']
+    const idx = parts.indexOf('hotel');
+    if(idx === -1 || !parts[idx+1] || !parts[idx+2]) return null;
+    const country = parts[idx+1];
+    const slug = parts[idx+2].split('.')[0];
+    const name = slug.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+    return { country, name };
+  }catch(e){ return null; }
+}
+
+function addViaRow(value){
+  viaCount++;
+  const row = document.createElement('div');
+  row.className = 'form-row';
+  const safeVal = (value||'').replace(/"/g,'&quot;');
+  row.innerHTML = `<input class="via-input" placeholder="Mellemlanding (fx Frankfurt Lufthavn)" value="${safeVal}"><button type="button" class="del-via" style="width:auto;background:transparent;color:var(--muted);">✕</button>`;
+  row.querySelector('.del-via').addEventListener('click', () => row.remove());
+  document.getElementById('viaContainer').appendChild(row);
+  attachPlaceAutocomplete(row.querySelector('.via-input'));
+}
+document.getElementById('addViaBtn').addEventListener('click', () => addViaRow());
+
+let currentUid = null;
+
+function loadStops(){
+  try{ return JSON.parse(localStorage.getItem('itineraryStops')||'[]'); }catch(e){ return []; }
+}
+async function saveStopsToCloud(){
+  if(!currentUid) return;
+  try{
+    const { doc, setDoc } = window.fbFns;
+    await setDoc(doc(window.fbDb, 'users', currentUid), { stops }, { merge: true });
+  }catch(e){ console.error('Cloud save failed', e); }
+}
+async function loadStopsFromCloud(uid){
+  const { doc, getDoc } = window.fbFns;
+  const snap = await getDoc(doc(window.fbDb, 'users', uid));
+  return (snap.exists() && Array.isArray(snap.data().stops)) ? snap.data().stops : [];
+}
+function saveStops(){
+  if(currentUid){
+    saveStopsToCloud(); // fires in the background — the UI already reflects the in-memory `stops` array
+  }else{
+    try{ localStorage.setItem('itineraryStops', JSON.stringify(stops)); }catch(e){}
+  }
+}
+
+function initMapbox(){
+  const token = localStorage.getItem('mapboxToken');
+  if(!token){ return; }
+  document.getElementById('tokenInput').value = token;
+  document.getElementById('tokenStatus').textContent = 'Token gemt ✓';
+  document.getElementById('tokenStatus').className = 'status ok';
+  mapboxgl.accessToken = token;
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v11',
+    center: [10, 50],
+    zoom: 2
+  });
+  // `stops` is already populated by the auth flow (cloud data) before this runs — don't overwrite it here.
+  renderList();
+  map.on('load', () => {
+    mapLoaded = true;
+    renderMap();
+  });
+}
+
+document.getElementById('saveToken').addEventListener('click', () => {
+  const val = document.getElementById('tokenInput').value.trim();
+  const statusEl = document.getElementById('tokenStatus');
+  if(!val.startsWith('pk.')){
+    statusEl.textContent = 'Det ligner ikke en gyldig public token (skal starte med "pk.")';
+    statusEl.className = 'status err';
+    return;
+  }
+  localStorage.setItem('mapboxToken', val);
+  location.reload();
+});
+
+async function geocode(query, token, country, types){
+  let url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&limit=1`;
+  if(country) url += `&country=${encodeURIComponent(country)}`;
+  if(types) url += `&types=${encodeURIComponent(types)}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Geocoding fejlede');
+  const data = await res.json();
+  if(!data.features || !data.features.length) throw new Error('Kunne ikke finde stedet');
+  const f = data.features[0];
+  return { lng: f.center[0], lat: f.center[1], placeName: f.place_name };
+}
+
+async function fetchBookingMeta(url){
+  try{
+    const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+    if(!res.ok) return null;
+    const json = await res.json();
+    if(json.status !== 'success' || !json.data) return null;
+    return {
+      imageUrl: json.data.image ? json.data.image.url : null,
+      title: json.data.title || null,
+      description: json.data.description || null
+    };
+  }catch(e){ return null; }
+}
+
+function extractLocalityFromDescription(desc){
+  if(!desc) return null;
+  const m = desc.match(/(?:located in|beliggende i)\s+([A-ZÆØÅ][\wÆØÅæøå'\- ]{2,30})/i);
+  return m ? m[1].trim().replace(/[.,]$/,'') : null;
+}
+
+function parseBookingTitle(rawTitle){
+  if(!rawTitle) return { name: null, locality: null };
+  let title = rawTitle
+    .replace(/\s*[-–|]\s*Opdaterede?\s*priser.*$/i, '')
+    .replace(/\s*[-–|]\s*Updated\s*\d{4}.*$/i, '')
+    .replace(/\s*[-–|]\s*Booking\.com.*$/i, '')
+    .trim();
+  let locality = null;
+  const parenMatch = title.match(/\(([^)]+)\)/);
+  if(parenMatch){
+    locality = parenMatch[1].trim();
+    title = title.replace(parenMatch[0], '').trim();
+  }else{
+    const parts = title.split(',');
+    if(parts.length > 1){
+      locality = parts.slice(1).join(',').trim();
+      title = parts[0].trim();
+    }
+  }
+  return { name: title || null, locality };
+}
+
+function sanitizeAddressQuery(str){
+  if(!str) return str;
+  // "Km. 19,8" -> "Km. 19.8" — a decimal comma between digits is not an address-part separator
+  return str.replace(/(\d),(\d)/g, '$1.$2');
+}
+
+function parseCoordsFromInput(str){
+  if(!str) return null;
+  const isValid = (lat, lng) => Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  // Plain "lat, lng" pair, e.g. "-8.552, 115.313"
+  const direct = str.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+  if(direct){
+    const lat = parseFloat(direct[1]), lng = parseFloat(direct[2]);
+    if(isValid(lat, lng)) return { lat, lng };
+  }
+  // Coordinates embedded in a Google Maps link, e.g. .../@-8.552,115.313,15z or ?q=-8.552,115.313
+  const urlMatch = str.match(/[@=](-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
+  if(urlMatch){
+    const lat = parseFloat(urlMatch[1]), lng = parseFloat(urlMatch[2]);
+    if(isValid(lat, lng)) return { lat, lng };
+  }
+  return null;
+}
+
+document.getElementById('addStop').addEventListener('click', async () => {
+  const name = document.getElementById('stopName').value.trim();
+  const type = document.getElementById('stopType').value;
+  const leg = isLegType(type);
+  const address = sanitizeAddressQuery(document.getElementById('stopAddress').value.trim());
+  const bookingUrl = type === 'hotel' ? document.getElementById('bookingUrl').value.trim() : '';
+  const manualImageUrl = type === 'hotel' ? document.getElementById('imageUrlInput').value.trim() : '';
+  const fromAddress = sanitizeAddressQuery(document.getElementById('stopFrom').value.trim());
+  const toAddress = sanitizeAddressQuery(document.getElementById('stopTo').value.trim());
+  const start = document.getElementById('stopStart').value;
+  const end = document.getElementById('stopEnd').value;
+  const statusEl = document.getElementById('addStatus');
+  const token = localStorage.getItem('mapboxToken');
+
+  if(!token){ statusEl.textContent = 'Indsæt din Mapbox-token øverst først.'; statusEl.className='status err'; return; }
+  if(!start){ statusEl.textContent = 'Udfyld startdato.'; statusEl.className='status err'; return; }
+  if(!name && !(type === 'hotel' && bookingUrl)){ statusEl.textContent = 'Udfyld navn, eller indsæt et Booking.com-link.'; statusEl.className='status err'; return; }
+  if(leg && (!fromAddress || !toAddress)){ statusEl.textContent = 'Udfyld både fra- og til-destination.'; statusEl.className='status err'; return; }
+  if(!leg && !address && !bookingUrl){ statusEl.textContent = 'Udfyld adresse/navn, eller indsæt et Booking.com-link.'; statusEl.className='status err'; return; }
+
+  statusEl.textContent = 'Slår adresse(r) op...';
+  statusEl.className = 'status';
+  try{
+    let stop = { id: Date.now(), name, type, start, end: end||start };
+    if(leg){
+      const [fromResult, toResult] = await Promise.all([
+        resolveLocationInput(document.getElementById('stopFrom'), token),
+        resolveLocationInput(document.getElementById('stopTo'), token)
+      ]);
+      const fromRes = fromResult.res, toRes = toResult.res;
+      const resolvedFromAddress = fromResult.address, resolvedToAddress = toResult.address;
+      let vias = [];
+      if(type === 'fly'){
+        const viaInputs = Array.from(document.querySelectorAll('.via-input')).filter(i => i.value.trim());
+        if(viaInputs.length){
+          const viaResults = await Promise.all(viaInputs.map(i => resolveLocationInput(i, token)));
+          vias = viaResults.map(r => ({ address: r.address, lng: r.res.lng, lat: r.res.lat }));
+        }
+      }
+      stop = { ...stop, fromAddress: resolvedFromAddress, fromLng: fromRes.lng, fromLat: fromRes.lat, toAddress: resolvedToAddress, toLng: toRes.lng, toLat: toRes.lat, vias };
+    }else{
+      let bookingMeta = null;
+      if(type === 'hotel' && bookingUrl && (!manualImageUrl || !address)){
+        bookingMeta = await fetchBookingMeta(bookingUrl);
+      }
+      let titleName = null, country = null;
+      if(bookingMeta && bookingMeta.title){
+        titleName = parseBookingTitle(bookingMeta.title).name;
+      }
+      if(type === 'hotel' && bookingUrl){
+        const parsedUrl = parseBookingUrl(bookingUrl);
+        if(parsedUrl){ country = parsedUrl.country; if(!titleName) titleName = parsedUrl.name; }
+      }
+
+      let res, finalAddress;
+      if(address){
+        const coords = parseCoordsFromInput(address);
+        if(coords){
+          // Exact coordinates given — no text search involved, just confirm the human-readable address.
+          const rev = await reverseGeocode(coords.lng, coords.lat, token);
+          res = { lng: coords.lng, lat: coords.lat, placeName: rev || address };
+          finalAddress = rev || address;
+        }else{
+          // The person typed the address themselves — still goes through Mapbox's text search,
+          // but we bias it toward actual address/POI matches rather than broad region matches.
+          try{
+            res = await geocode(address, token, country, 'address,poi');
+          }catch(e1){
+            res = await geocode(address, token, country);
+          }
+          finalAddress = address;
+        }
+      }else{
+        let titleLocality = null;
+        if(bookingMeta && bookingMeta.title){
+          titleLocality = parseBookingTitle(bookingMeta.title).locality;
+        }
+        if(!titleLocality && bookingMeta && bookingMeta.description){
+          titleLocality = extractLocalityFromDescription(bookingMeta.description);
+        }
+        if(!titleName) throw new Error('Kunne ikke udlede et navn fra linket');
+        const query = titleLocality ? `${titleName}, ${titleLocality}` : titleName;
+        try{
+          res = await geocode(query, token, country, 'poi');
+        }catch(e1){
+          try{ res = await geocode(query, token, country); }
+          catch(e2){ res = await geocode(titleName, token, country); }
+        }
+        finalAddress = res.placeName; // the app's best estimate — stored so it can be seen and corrected later
+      }
+      stop.name = name || titleName || finalAddress;
+      const resolvedImage = manualImageUrl || (bookingMeta ? bookingMeta.imageUrl : null);
+      stop = { ...stop, address: finalAddress, placeName: res.placeName, bookingUrl: bookingUrl || undefined, imageUrl: resolvedImage, lng: res.lng, lat: res.lat };
+    }
+    stop.id = editingId || stop.id;
+    if(editingId){
+      const idx = stops.findIndex(x => x.id === editingId);
+      if(idx !== -1) stops[idx] = stop; else stops.push(stop);
+    }else{
+      stops.push(stop);
+    }
+    const wasEditing = !!editingId;
+    editingId = null;
+    saveStops();
+    renderAll();
+    document.getElementById('stopName').value = '';
+    document.getElementById('stopAddress').value = '';
+    document.getElementById('bookingUrl').value = '';
+    document.getElementById('imageUrlInput').value = '';
+    document.getElementById('stopFrom').value = '';
+    document.getElementById('stopFrom')._geo = null;
+    document.getElementById('stopTo').value = '';
+    document.getElementById('stopTo')._geo = null;
+    document.getElementById('stopStart').value = '';
+    document.getElementById('stopEnd').value = '';
+    document.getElementById('stopEnd').min = '';
+    document.getElementById('viaContainer').innerHTML = '';
+    document.getElementById('addStop').textContent = 'Tilføj til rejsen';
+    document.getElementById('cancelEdit').style.display = 'none';
+    statusEl.textContent = wasEditing ? 'Ændring gemt ✓' : 'Tilføjet ✓';
+    statusEl.className = 'status ok';
+  }catch(e){
+    statusEl.textContent = 'Kunne ikke finde adressen(erne) — prøv en mere specifik søgning eller andet link.';
+    statusEl.className = 'status err';
+  }
+});
+
+function removeStop(id){
+  stops = stops.filter(s => s.id !== id);
+  saveStops();
+  renderAll();
+}
+
+function editStop(id){
+  const s = stops.find(x => x.id === id);
+  if(!s) return;
+  editingId = id;
+  document.getElementById('stopName').value = s.name;
+  document.getElementById('stopType').value = s.type;
+  toggleAddressFields();
+  document.getElementById('stopStart').value = s.start;
+  document.getElementById('stopEnd').value = s.end || '';
+  document.getElementById('stopEnd').min = s.start || '';
+  document.getElementById('viaContainer').innerHTML = '';
+  if(isLegType(s.type)){
+    document.getElementById('stopFrom').value = s.fromAddress || '';
+    document.getElementById('stopFrom')._geo = null;
+    document.getElementById('stopTo').value = s.toAddress || '';
+    document.getElementById('stopTo')._geo = null;
+    if(s.type === 'fly' && s.vias){ s.vias.forEach(v => addViaRow(v.address)); }
+  }else{
+    document.getElementById('stopAddress').value = s.address || '';
+    document.getElementById('bookingUrl').value = s.bookingUrl || '';
+    document.getElementById('imageUrlInput').value = s.imageUrl || '';
+  }
+  document.getElementById('addStop').textContent = 'Gem ændring';
+  document.getElementById('cancelEdit').style.display = 'block';
+  document.getElementById('addStatus').textContent = '';
+  document.querySelector('.sidebar').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function cancelEditMode(){
+  editingId = null;
+  document.getElementById('stopName').value = '';
+  document.getElementById('stopAddress').value = '';
+  document.getElementById('bookingUrl').value = '';
+  document.getElementById('imageUrlInput').value = '';
+  document.getElementById('stopFrom').value = '';
+  document.getElementById('stopFrom')._geo = null;
+  document.getElementById('stopTo').value = '';
+  document.getElementById('stopTo')._geo = null;
+  document.getElementById('stopStart').value = '';
+  document.getElementById('stopEnd').value = '';
+  document.getElementById('stopEnd').min = '';
+  document.getElementById('viaContainer').innerHTML = '';
+  document.getElementById('addStop').textContent = 'Tilføj til rejsen';
+  document.getElementById('cancelEdit').style.display = 'none';
+  document.getElementById('addStatus').textContent = '';
+}
+document.getElementById('cancelEdit').addEventListener('click', cancelEditMode);
+
+function renderList(){
+  const list = document.getElementById('stopList');
+  if(!stops.length){
+    list.innerHTML = '<div class="empty">Ingen etaper endnu. Tilføj din første ovenfor.</div>';
+    return;
+  }
+  const sorted = [...stops].sort((a,b) => a.start.localeCompare(b.start) || (a.end||a.start).localeCompare(b.end||b.start));
+  list.innerHTML = sorted.map((s, i) => `
+    <div class="stop">
+      <button class="edit" data-id="${s.id}" title="Rediger">✎</button>
+      <button class="del" data-id="${s.id}" title="Fjern">✕</button>
+      <div class="type">${typeLabel(s.type)}</div>
+      <div class="name"><span class="seq-badge">${i+1}</span>${s.name}</div>
+      ${isLegType(s.type) ? `<div class="dates">${[s.fromAddress, ...(s.vias||[]).map(v=>v.address), s.toAddress].join(' → ')}</div>` : `<div class="dates">${s.placeName || s.address}</div>`}
+      <div class="dates">${s.start}${s.end && s.end!==s.start ? ' → '+s.end : ''}</div>
+    </div>`).join('');
+  list.querySelectorAll('.edit').forEach(btn => {
+    btn.addEventListener('click', () => editStop(Number(btn.dataset.id)));
+  });
+  list.querySelectorAll('.del').forEach(btn => {
+    btn.addEventListener('click', () => removeStop(Number(btn.dataset.id)));
+  });
+}
+
+function nightsBetween(startStr, endStr){
+  const start = new Date(startStr);
+  const end = new Date(endStr || startStr);
+  const diffDays = Math.round((end - start) / 86400000);
+  return diffDays + 1; // both the start and end date counted inclusive
+}
+
+function buildPointPopup(s){
+  let html = '';
+  if(s.imageUrl){
+    html += `<img src="${s.imageUrl}" alt="${s.name}" style="width:100%;max-width:220px;height:120px;object-fit:cover;border-radius:6px;margin-bottom:8px;display:block;" onerror="this.style.display='none';">`;
+  }
+  html += `<strong>${s.name}</strong>`;
+  html += `<br>Ankomst: ${s.start}`;
+  html += `<br>Afgang: ${s.end || s.start}`;
+  const nights = nightsBetween(s.start, s.end);
+  html += `<br>${nights} overnatning${nights === 1 ? '' : 'er'}`;
+  if(s.bookingUrl){
+    const linkLabel = /booking\.com/i.test(s.bookingUrl) ? 'Se på Booking.com →' : 'Besøg hjemmesiden →';
+    html += `<br><a href="${s.bookingUrl}" target="_blank" rel="noopener" style="color:var(--popup-link);">${linkLabel}</a>`;
+  }
+  return html;
+}
+
+async function reverseGeocode(lng, lat, token){
+  try{
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&limit=1`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const data = await res.json();
+    return (data.features && data.features.length) ? data.features[0].place_name : null;
+  }catch(e){ return null; }
+}
+
+function addPointMarker(lng, lat, popupHtml, color, opts){
+  opts = opts || {};
+  const el = document.createElement('div');
+  const size = opts.label ? 22 : 14;
+  el.style.width = size+'px'; el.style.height = size+'px'; el.style.borderRadius='50%';
+  el.style.background = color; el.style.border = '2px solid #1a1006';
+  el.style.cursor = opts.draggable ? 'grab' : 'pointer';
+  if(opts.label){
+    el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center';
+    el.style.color='#1a1006'; el.style.fontSize='11px'; el.style.fontWeight='700'; el.style.fontFamily="'Inter',sans-serif";
+    el.textContent = opts.label;
+  }
+  const marker = new mapboxgl.Marker({ element: el, draggable: !!opts.draggable })
+    .setLngLat([lng, lat])
+    .setPopup(new mapboxgl.Popup({offset:12, maxWidth:'260px'}).setHTML(popupHtml))
+    .addTo(map);
+  if(opts.draggable && opts.stopId){
+    marker.on('dragend', async () => {
+      const pos = marker.getLngLat();
+      const s = stops.find(x => x.id === opts.stopId);
+      if(!s) return;
+      const token = localStorage.getItem('mapboxToken');
+      const rev = await reverseGeocode(pos.lng, pos.lat, token);
+      if(opts.field === 'from'){
+        s.fromLng = pos.lng; s.fromLat = pos.lat;
+        if(rev) s.fromAddress = rev;
+      }else if(opts.field === 'to'){
+        s.toLng = pos.lng; s.toLat = pos.lat;
+        if(rev) s.toAddress = rev;
+      }else if(opts.field === 'via' && s.vias && s.vias[opts.viaIndex]){
+        s.vias[opts.viaIndex].lng = pos.lng; s.vias[opts.viaIndex].lat = pos.lat;
+        if(rev) s.vias[opts.viaIndex].address = rev;
+      }else{
+        s.lng = pos.lng; s.lat = pos.lat;
+        if(rev) s.placeName = rev;
+      }
+      saveStops();
+      renderAll(); // rebuilds markers AND the route/leg lines so they follow the new position
+    });
+  }
+  markers.push(marker);
+}
+
+function addLineIcon(coordsPath, icon, bgColor){
+  let midLng, midLat;
+  if(coordsPath.length === 2){
+    midLng = (coordsPath[0][0] + coordsPath[1][0]) / 2;
+    midLat = (coordsPath[0][1] + coordsPath[1][1]) / 2;
+  }else{
+    const mid = coordsPath[Math.floor(coordsPath.length/2)];
+    midLng = mid[0]; midLat = mid[1];
+  }
+  const el = document.createElement('div');
+  el.style.cssText = `width:24px;height:24px;border-radius:50%;background:${bgColor};display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #1a1006;box-shadow:0 2px 6px rgba(0,0,0,.4);pointer-events:none;`;
+  el.textContent = icon;
+  const marker = new mapboxgl.Marker({ element: el }).setLngLat([midLng, midLat]).addTo(map);
+  markers.push(marker);
+}
+
+function renderMap(){
+  if(!map) return;
+  markers.forEach(m => m.remove());
+  markers = [];
+  const sorted = [...stops].sort((a,b) => a.start.localeCompare(b.start) || (a.end||a.start).localeCompare(b.end||b.start));
+  const bounds = new mapboxgl.LngLatBounds();
+  const routeAnchors = []; // one representative point per stop, in order, for the overview line
+
+  sorted.forEach((s, i) => {
+    const seq = String(i+1);
+    if(isLegType(s.type)){
+      const color = legColor(s.type);
+      addPointMarker(s.fromLng, s.fromLat, `<strong>${s.name}</strong><br>Afgang: ${s.fromAddress}`, color, { label: seq, draggable: true, stopId: s.id, field: 'from' });
+      (s.vias||[]).forEach((v, vi) => {
+        addPointMarker(v.lng, v.lat, `<strong>${s.name}</strong><br>Mellemlanding: ${v.address}`, color, { draggable: true, stopId: s.id, field: 'via', viaIndex: vi });
+        bounds.extend([v.lng, v.lat]);
+      });
+      addPointMarker(s.toLng, s.toLat, `<strong>${s.name}</strong><br>Ankomst: ${s.toAddress}`, color, { label: seq, draggable: true, stopId: s.id, field: 'to' });
+      bounds.extend([s.fromLng, s.fromLat]);
+      bounds.extend([s.toLng, s.toLat]);
+      routeAnchors.push([s.fromLng, s.fromLat]); // arrive at departure point first
+      (s.vias||[]).forEach(v => routeAnchors.push([v.lng, v.lat]));
+      routeAnchors.push([s.toLng, s.toLat]); // then continue from the arrival point
+      const legPath = [[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]];
+      addLineIcon(legPath, legIcon(s.type), color);
+    }else{
+      addPointMarker(s.lng, s.lat, buildPointPopup(s), 'var(--accent)', { draggable: true, stopId: s.id, label: seq });
+      bounds.extend([s.lng, s.lat]);
+      routeAnchors.push([s.lng, s.lat]);
+    }
+  });
+
+  for(let i=0; i<sorted.length-1; i++){
+    const a = sorted[i], b = sorted[i+1];
+    if(a.type === 'hotel' && b.type === 'hotel'){
+      addLineIcon([[a.lng, a.lat], [b.lng, b.lat]], '🚗', '#D9D9D9');
+    }
+  }
+
+  ['route','legs'].forEach(id => {
+    if(map.getLayer(id)) map.removeLayer(id);
+    if(map.getSource(id)) map.removeSource(id);
+  });
+
+  if(routeAnchors.length > 1){
+    map.addSource('route', {
+      type: 'geojson',
+      data: { type:'Feature', geometry: { type:'LineString', coordinates: routeAnchors } }
+    });
+    map.addLayer({
+      id:'route', type:'line', source:'route',
+      layout:{ 'line-join':'round', 'line-cap':'round' },
+      paint:{ 'line-color':'#4FB0A5', 'line-width':2, 'line-dasharray':[2,1] }
+    });
+  }
+
+  const legStops = sorted.filter(s => isLegType(s.type));
+  if(legStops.length){
+    map.addSource('legs', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: legStops.map(s => ({
+          type: 'Feature',
+          properties: { name: s.name, type: s.type },
+          geometry: { type: 'LineString', coordinates: [[s.fromLng, s.fromLat], ...(s.vias||[]).map(v=>[v.lng, v.lat]), [s.toLng, s.toLat]] }
+        }))
+      }
+    });
+    map.addLayer({
+      id:'legs', type:'line', source:'legs',
+      layout:{ 'line-join':'round', 'line-cap':'round' },
+      paint:{
+        'line-color': ['match', ['get','type'], 'fly', '#8ECFEB', 'train', '#9099A6', 'transport', '#1B4B72', '#6FA8DC'],
+        'line-width':3
+      }
+    });
+  }
+
+  if(sorted.length && !hasFitBounds){
+    map.fitBounds(bounds, { padding: 60, maxZoom: 12 });
+    hasFitBounds = true;
+  }
+}
+
+function renderAll(){ renderList(); if(mapLoaded) renderMap(); }
+
+const sidebarEl = document.querySelector('.sidebar');
+const sidebarToggleBtn = document.getElementById('sidebarToggle');
+function setSidebarCollapsed(collapsed){
+  sidebarEl.classList.toggle('collapsed', collapsed);
+  sidebarToggleBtn.textContent = collapsed ? '›' : '‹';
+  sidebarToggleBtn.title = collapsed ? 'Vis panel' : 'Minimer panel';
+  try{ localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0'); }catch(e){}
+  setTimeout(() => { if(map) map.resize(); }, 220); // after the CSS width transition finishes
+}
+sidebarToggleBtn.addEventListener('click', () => {
+  setSidebarCollapsed(!sidebarEl.classList.contains('collapsed'));
+});
+if(localStorage.getItem('sidebarCollapsed') === '1'){
+  sidebarEl.classList.add('collapsed');
+  sidebarToggleBtn.textContent = '›';
+  sidebarToggleBtn.title = 'Vis panel';
+}
+
+attachPlaceAutocomplete(document.getElementById('stopFrom'));
+attachPlaceAutocomplete(document.getElementById('stopTo'));
+toggleAddressFields();
+
+function showAuthScreen(show){
+  document.getElementById('authScreen').style.display = show ? 'flex' : 'none';
+  document.getElementById('appRoot').style.display = show ? 'none' : 'flex';
+}
+
+document.getElementById('authLoginBtn').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const pass = document.getElementById('authPassword').value;
+  const statusEl = document.getElementById('authStatus');
+  if(!email || !pass){ statusEl.textContent = 'Udfyld e-mail og adgangskode.'; statusEl.className = 'status err'; return; }
+  statusEl.textContent = 'Logger ind…'; statusEl.className = 'status';
+  try{
+    await window.fbFns.signInWithEmailAndPassword(window.fbAuth, email, pass);
+  }catch(e){
+    statusEl.textContent = 'Login fejlede: ' + e.message; statusEl.className = 'status err';
+  }
+});
+
+document.getElementById('authSignupBtn').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const pass = document.getElementById('authPassword').value;
+  const statusEl = document.getElementById('authStatus');
+  if(!email || !pass){ statusEl.textContent = 'Udfyld e-mail og adgangskode.'; statusEl.className = 'status err'; return; }
+  if(pass.length < 6){ statusEl.textContent = 'Adgangskoden skal være mindst 6 tegn.'; statusEl.className = 'status err'; return; }
+  statusEl.textContent = 'Opretter bruger…'; statusEl.className = 'status';
+  try{
+    await window.fbFns.createUserWithEmailAndPassword(window.fbAuth, email, pass);
+  }catch(e){
+    statusEl.textContent = 'Oprettelse fejlede: ' + e.message; statusEl.className = 'status err';
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  window.fbFns.signOut(window.fbAuth);
+});
+
+window.fbFns.onAuthStateChanged(window.fbAuth, async (user) => {
+  if(user){
+    currentUid = user.uid;
+    document.getElementById('userEmailLabel').textContent = user.email || '';
+    showAuthScreen(false);
+
+    const cloudStops = await loadStopsFromCloud(user.uid);
+    const localStops = loadStops();
+
+    if(cloudStops.length === 0 && localStops.length > 0){
+      const migrate = confirm(`Vi fandt ${localStops.length} etape(r) gemt på denne enhed. Vil du overføre dem til din konto (${user.email})?`);
+      stops = migrate ? localStops : [];
+      if(migrate) await saveStopsToCloud();
+    }else{
+      stops = cloudStops;
+    }
+
+    if(!map){
+      mapLoaded = false;
+      hasFitBounds = false;
+      initMapbox();
+    }else{
+      hasFitBounds = false; // allow a fresh auto-fit for the newly loaded user's data
+      renderAll();
+    }
+  }else{
+    currentUid = null;
+    stops = [];
+    showAuthScreen(true);
+  }
+});
+</script>
+</body>
+</html>
