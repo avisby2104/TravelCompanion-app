@@ -26,6 +26,8 @@
   window.fbDb = getFirestore(fbApp);
   // Exposed on window so the app's classic (non-module) script below can use them.
   window.fbFns = { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, doc, getDoc, setDoc, GoogleAuthProvider, signInWithPopup };
+  window.__fbReady = true;
+  window.dispatchEvent(new Event('firebase-ready'));
 </script>
 <style>
   :root{
@@ -881,37 +883,53 @@ document.getElementById('authGoogleBtn').addEventListener('click', async () => {
   }
 });
 
-window.fbFns.onAuthStateChanged(window.fbAuth, async (user) => {
-  if(user){
-    currentUid = user.uid;
-    document.getElementById('userEmailLabel').textContent = user.email || '';
-    showAuthScreen(false);
+function startAuthListener(){
+  window.fbFns.onAuthStateChanged(window.fbAuth, async (user) => {
+  try{
+    if(user){
+      currentUid = user.uid;
+      document.getElementById('userEmailLabel').textContent = user.email || '';
+      showAuthScreen(false);
 
-    const cloudStops = await loadStopsFromCloud(user.uid);
-    const localStops = loadStops();
+      const cloudStops = await loadStopsFromCloud(user.uid);
+      const localStops = loadStops();
 
-    if(cloudStops.length === 0 && localStops.length > 0){
-      const migrate = confirm(`Vi fandt ${localStops.length} etape(r) gemt på denne enhed. Vil du overføre dem til din konto (${user.email})?`);
-      stops = migrate ? localStops : [];
-      if(migrate) await saveStopsToCloud();
+      if(cloudStops.length === 0 && localStops.length > 0){
+        const migrate = confirm(`Vi fandt ${localStops.length} etape(r) gemt på denne enhed. Vil du overføre dem til din konto (${user.email})?`);
+        stops = migrate ? localStops : [];
+        if(migrate) await saveStopsToCloud();
+      }else{
+        stops = cloudStops;
+      }
+
+      if(!map){
+        mapLoaded = false;
+        hasFitBounds = false;
+        initMapbox();
+      }else{
+        hasFitBounds = false; // allow a fresh auto-fit for the newly loaded user's data
+        renderAll();
+      }
     }else{
-      stops = cloudStops;
+      currentUid = null;
+      stops = [];
+      showAuthScreen(true);
     }
-
-    if(!map){
-      mapLoaded = false;
-      hasFitBounds = false;
-      initMapbox();
-    }else{
-      hasFitBounds = false; // allow a fresh auto-fit for the newly loaded user's data
-      renderAll();
-    }
-  }else{
-    currentUid = null;
-    stops = [];
+  }catch(e){
+    console.error('Auth state handling failed', e);
     showAuthScreen(true);
+    const statusEl = document.getElementById('authStatus');
+    statusEl.textContent = 'Der opstod en fejl efter login: ' + e.message;
+    statusEl.className = 'status err';
   }
-});
+  });
+}
+
+if(window.__fbReady){
+  startAuthListener();
+}else{
+  window.addEventListener('firebase-ready', startAuthListener, { once: true });
+}
 </script>
 </body>
 </html>
