@@ -74,11 +74,19 @@
   .form-row > *{flex:1;}
   fieldset{border:none;padding:0;margin:0 0 18px;}
   legend{font-size:0.8rem;color:var(--muted);margin-bottom:8px;text-transform:none;}
-  .stop{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;transition:border-color 0.15s ease;}
+  .stop-row{display:flex;gap:10px;margin-bottom:10px;align-items:stretch;}
+  .stop-rail{display:flex;flex-direction:column;align-items:center;width:24px;flex-shrink:0;}
+  .stop-rail .rail-line{flex:1;width:2px;background:var(--line);margin:4px 0;min-height:6px;}
+  .stop{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;position:relative;transition:border-color 0.15s ease;display:flex;align-items:stretch;overflow:hidden;flex:1;}
   .stop:hover{border-color:var(--accent);}
+  .stop-stub{width:42px;flex-shrink:0;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:1.05rem;position:relative;border-right:2px dashed var(--line);}
+  .stop-stub::before,.stop-stub::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:var(--panel);left:50%;transform:translateX(-50%);z-index:1;}
+  .stop-stub::before{top:-8px;}
+  .stop-stub::after{bottom:-8px;}
+  .stop-body{padding:12px 40px 12px 12px;flex:1;min-width:0;}
   .stop .type{display:inline-block;font-size:0.7rem;color:var(--accent);margin-bottom:4px;}
   .stop .name{font-weight:600;font-size:0.95rem;}
-  .seq-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#1a1006;font-size:0.7rem;font-weight:700;margin-right:8px;vertical-align:middle;}
+  .seq-badge{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#1a1006;font-size:0.72rem;font-weight:700;flex-shrink:0;}
   .stop .dates{color:var(--muted);font-size:0.8rem;margin-top:2px;}
   .stop .del{position:absolute;top:10px;right:10px;width:auto;background:transparent;color:var(--muted);padding:2px 6px;font-size:1rem;}
   .stop .del:hover{color:var(--accent);}
@@ -199,6 +207,12 @@ function legIcon(type){
   if(type === 'fly') return '✈️';
   if(type === 'train') return '🚆';
   return '🚢'; // transport (Båd)
+}
+
+function typeIcon(type){
+  if(isLegType(type)) return legIcon(type);
+  if(type === 'hotel') return '🏨';
+  return '📍'; // aktivitet
 }
 
 function toggleAddressFields(){
@@ -677,13 +691,22 @@ function renderList(){
   }
   const sorted = [...stops].sort((a,b) => a.start.localeCompare(b.start) || (a.end||a.start).localeCompare(b.end||b.start));
   list.innerHTML = sorted.map((s, i) => `
-    <div class="stop" data-id="${s.id}" style="cursor:pointer;">
-      <button class="edit" data-id="${s.id}" title="Rediger">✎</button>
-      <button class="del" data-id="${s.id}" title="Fjern">✕</button>
-      <div class="type">${typeLabel(s.type)}</div>
-      <div class="name"><span class="seq-badge">${i+1}</span>${s.name}</div>
-      ${isLegType(s.type) ? `<div class="dates">${[s.fromAddress, ...(s.vias||[]).map(v=>v.address), s.toAddress].join(' → ')}</div>` : `<div class="dates">${s.placeName || s.address}</div>`}
-      <div class="dates">${s.start}${s.end && s.end!==s.start ? ' → '+s.end : ''}</div>
+    <div class="stop-row">
+      <div class="stop-rail">
+        <span class="seq-badge">${i+1}</span>
+        ${i < sorted.length - 1 ? '<div class="rail-line"></div>' : ''}
+      </div>
+      <div class="stop" data-id="${s.id}" style="cursor:pointer;">
+        <div class="stop-stub">${typeIcon(s.type)}</div>
+        <button class="edit" data-id="${s.id}" title="Rediger">✎</button>
+        <button class="del" data-id="${s.id}" title="Fjern">✕</button>
+        <div class="stop-body">
+          <div class="type">${typeLabel(s.type)}</div>
+          <div class="name">${s.name}</div>
+          ${isLegType(s.type) ? `<div class="dates">${[s.fromAddress, ...(s.vias||[]).map(v=>v.address), s.toAddress].join(' → ')}</div>` : `<div class="dates">${s.placeName || s.address}</div>`}
+          <div class="dates">${s.start}${s.end && s.end!==s.start ? ' → '+s.end : ''}</div>
+        </div>
+      </div>
     </div>`).join('');
   list.querySelectorAll('.edit').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); editStop(Number(btn.dataset.id)); });
