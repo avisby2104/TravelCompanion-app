@@ -90,7 +90,9 @@
   .stop-body{padding:12px 40px 12px 12px;flex:1;min-width:0;}
   .stop .type{display:inline-block;font-size:0.7rem;color:var(--accent);margin-bottom:4px;}
   .stop .name{font-weight:600;font-size:0.95rem;}
-  .seq-badge{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#1a1006;font-size:0.72rem;font-weight:700;flex-shrink:0;}
+  .seq-badge{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#1a1006;font-size:0.72rem;font-weight:700;flex-shrink:0;font-family:'Space Grotesk',sans-serif;letter-spacing:0.3px;border:1.5px dashed rgba(26,16,6,0.4);box-shadow:0 0 0 2px var(--accent), inset 0 0 0 1px rgba(255,255,255,0.18);transform:rotate(-4deg);}
+  .stop-row:nth-child(even) .seq-badge{transform:rotate(3deg);}
+  .stop-row:nth-child(3n) .seq-badge{transform:rotate(-2deg);}
   .stop .dates{color:var(--muted);font-size:0.8rem;margin-top:2px;}
   .stop .del{position:absolute;top:10px;right:10px;width:auto;background:transparent;color:var(--muted);padding:2px 6px;font-size:1rem;}
   .stop .del:hover{color:var(--accent);}
@@ -207,16 +209,30 @@ function legColor(type){
   return 'var(--boat)'; // transport (Båd)
 }
 
+const ICON_PATHS = {
+  hotel: '<path d="M3 18v-7a2 2 0 0 1 2-2h3v4"/><path d="M2 18h20"/><path d="M8 13h11a2 2 0 0 1 2 2v3"/>',
+  fly: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>',
+  transport: '<path d="M3 17c3 1.6 15 1.6 18 0"/><path d="M7 13V8h3v-2h2v2h1l3 5"/><path d="M2 20h20"/>',
+  train: '<rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 10.5h14"/><path d="M8.5 19.5 7 22M15.5 19.5 17 22"/><circle cx="9" cy="13" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="0.9" fill="currentColor" stroke="none"/>',
+  aktivitet: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/>',
+  car: '<path d="M3 17v-4l2-5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2l2 5v4"/><path d="M3 14h18"/><circle cx="7.5" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="16.5" cy="17" r="1.6" fill="currentColor" stroke="none"/>'
+};
+
+function iconSvg(type, opts){
+  opts = opts || {};
+  const size = opts.size || 20;
+  const stroke = opts.stroke || 'currentColor';
+  const path = ICON_PATHS[type] || ICON_PATHS.aktivitet;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;">${path}</svg>`;
+}
+
 function legIcon(type){
-  if(type === 'fly') return '✈️';
-  if(type === 'train') return '🚆';
-  return '🚢'; // transport (Båd)
+  const stroke = type === 'fly' ? '#1a1006' : '#fff';
+  return iconSvg(type, { size: 15, stroke });
 }
 
 function typeIcon(type){
-  if(isLegType(type)) return legIcon(type);
-  if(type === 'hotel') return '🏨';
-  return '📍'; // aktivitet
+  return iconSvg(type, { size: 19, stroke: 'var(--text)' });
 }
 
 function toggleAddressFields(){
@@ -397,6 +413,18 @@ function initMapbox(){
   renderList();
   map.on('load', () => {
     mapLoaded = true;
+    try{
+      const layers = map.getStyle().layers || [];
+      layers.forEach(l => {
+        if(l.id === 'background' && l.type === 'background'){
+          map.setPaintProperty(l.id, 'background-color', '#0F1B2B');
+        }
+        if(/water/i.test(l.id)){
+          if(l.type === 'fill') map.setPaintProperty(l.id, 'fill-color', '#12303D');
+          if(l.type === 'line') map.setPaintProperty(l.id, 'line-color', '#1B3A47');
+        }
+      });
+    }catch(e){ console.warn('Kunne ikke omfarve kortets baggrundslag', e); }
     renderMap();
   });
 }
@@ -898,7 +926,7 @@ function addLineIcon(coordsPath, icon, bgColor){
   }
   const el = document.createElement('div');
   el.style.cssText = `width:24px;height:24px;border-radius:50%;background:${bgColor};display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #1a1006;box-shadow:0 2px 6px rgba(0,0,0,.4);pointer-events:none;`;
-  el.textContent = icon;
+  el.innerHTML = icon;
   const marker = new mapboxgl.Marker({ element: el }).setLngLat([midLng, midLat]).addTo(map);
   markers.push(marker);
 }
@@ -945,7 +973,7 @@ function renderMap(){
   for(let i=0; i<sorted.length-1; i++){
     const a = sorted[i], b = sorted[i+1];
     if(a.type === 'hotel' && b.type === 'hotel'){
-      addLineIcon([[a.lng, a.lat], [b.lng, b.lat]], '🚗', '#D9D9D9');
+      addLineIcon([[a.lng, a.lat], [b.lng, b.lat]], iconSvg('car', { size: 15, stroke: '#1a1006' }), '#D9D9D9');
     }
   }
 
